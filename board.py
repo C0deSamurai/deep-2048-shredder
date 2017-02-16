@@ -128,7 +128,7 @@ class Board:
 
         r = list(row)
         # if there is space to move leftwards, does so and adds space to the end
-        while r[0] != 0:
+        while r[0] == 0:
             r = r[1:] + [r[0]]
 
         # now, go through and collapse any blank space between two tiles
@@ -160,17 +160,26 @@ class Board:
         self.board = np.apply_along_axis(self.__collapse_row, 1, self.board)
         
     def make_move(self, direction):
-        """Shifts the board in the given direction, and merges any tiles that can be merged in the
-        given direction. May not do anything. Direction is a number 0-3 representing up, right,
-        down, and left respectively (clockwise), which can be replaced by the constant variables UP,
-        DOWN, LEFT, and RIGHT from this class. Returns None."""
-        
+        """Shifts the board in the given direction, and merges any tiles that can be merged in the given
+        direction. May not do anything. Direction is a number 0-3 representing up, right, down, and
+        left respectively (clockwise), which can be replaced by the constant variables UP, DOWN,
+        LEFT, and RIGHT from this class. Returns 1 if the given move does something, and 0
+        otherwise.
+
+        """
+
+        self.old_board = np.copy(self.board)
         # rotate until what was the desired direction is facing left, collapse leftwards, and then
         # rotate back
         self.rotate(3 - direction)  # clockwise numbering jells nicely with rotation
 
         self.__move_left()  # do the actual work of collapsing
         self.rotate(direction - 3)  # undo whatever was done previously
+
+        if (self.board == self.old_board).all():  # same board
+            return 0
+        else:
+            return 1
 
     def add_random_tile(self, tiles=(2, 4), weights=(9, 1)):
         """Adds a tile in a randomly chosen unoccupied position according to the given weighted selection of
