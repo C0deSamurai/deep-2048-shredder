@@ -63,6 +63,5 @@ def neg_square_cost_function(board):
     return -np.sum(board.board.flatten() ** 2)
 
 
-if __name__ = "__main__":
-    tree_ai = TreeSearchAI(neg_square_cost_function, ply=4, save_games=True)
-    print(tree_ai.score_trials(n_games=10, goal=2048))
+tree_ai = TreeSearchAI(neg_square_cost_function, ply=4, save_games=True)
+print(tree_ai.score_trials(n_games=10, goal=2048))

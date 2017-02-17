@@ -7,6 +7,8 @@ from random import choice
 
 import numpy as np
 
+import make_move
+
 
 class Board:
     """A 2048 game board with tiles on it."""
@@ -28,9 +30,9 @@ class Board:
             raise ValueError("Need 2+ rows and columns, not shape ({}, {})".format(height, width))
 
         if board is None:
-            self.board = np.zeros((height, width))
+            self.board = np.zeros((height, width), dtype=np.int)
         else:
-            self.board = np.array(board)
+            self.board = np.array(board, dtype=np.int)
             if board.shape != (height, width):
                 raise ValueError("Expected board of shape" +
                                  " ({}, {}), not {}".format(height, width, board.shape))
@@ -123,46 +125,17 @@ class Board:
         - 16 4 4  ==>  16 8 - -
         Returns None.
 
-        This is, as an aside, responsible for about 20% of the runtime of AI training, so fast is
-        good!
-
+        Uses a Cython backend for efficiency.
         """
-
-        # the base case of nothing: important, otherwise the below will loop forever
-        if np.count_nonzero(row) == 0:  # all blank
-            return row
-
-        # remove all empty space and add back later
-        old_length = len(row)
-        r = row[np.nonzero(row)]
-
-        # No longer uses can_combine(), because it's too slow.
-        # I tried to do this with masks, but the special case of many repeated elements is extremely
-        # difficult to handle robustly
-
-        # always match pairs after the last matched pair
-        last_matched = -1
-        while 0 in np.diff(r):  # more pairs to cancel
-            pairs = np.where(np.diff(r) == 0)[0]
-            # get first pair that is after the last matched pair, or break
-            pairs = pairs[pairs > last_matched]
-            if len(pairs) > 0:
-                first_pair = pairs[0]
-                last_matched = first_pair
-            else:
-                break
-            # now just replace that with a spacer -1 and the combined sum
-            # but do nothing if you'd be double-matching a tile
-            r[first_pair] += r[first_pair + 1]
-            r[first_pair + 1] = -1
-
-        r = r[r != -1]
-        return np.append(r, np.zeros(old_length - len(r)))
+        make_move.collapse_row(row)
 
     def __move_left(self):
         """Collapses the board leftwards. This method is private and outside users should use
-        make_move, which just rotates the board, does this, and rotates back. Returns None."""
-        self.board = np.apply_along_axis(self.__collapse_row, 1, self.board)
+        make_move, which just rotates the board, does this, and rotates back. Returns None.
+        
+        A note on performance: this uses a Cython backend for speed, as this bottlenecks most AI
+        training."""
+        make_move.move_left(self.board)
         
     def make_move(self, direction):
         """Shifts the board in the given direction, and merges any tiles that can be merged in the given
@@ -170,10 +143,12 @@ class Board:
         left respectively (clockwise), which can be replaced by the constant variables UP, DOWN,
         LEFT, and RIGHT from this class. Returns 1 if the given move does something, and 0
         otherwise.
-
         """
 
-        self.old_board = np.copy(self.board)
+        # hash to check for equality, because we need to test if the move did anything but copying
+        # is slow
+        old_board_hash = hash(self.board.tostring())
+
         # rotate until what was the desired direction is facing left, collapse leftwards, and then
         # rotate back
         self.rotate(3 - direction)  # clockwise numbering jells nicely with rotation
@@ -181,7 +156,8 @@ class Board:
         self.__move_left()  # do the actual work of collapsing
         self.rotate(direction - 3)  # undo whatever was done previously
 
-        if (self.board == self.old_board).all():  # same board
+        new_board_hash = hash(self.board.tostring())
+        if new_board_hash == old_board_hash:  # same board
             return 0
         else:
             return 1
