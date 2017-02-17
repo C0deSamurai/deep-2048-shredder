@@ -2,7 +2,7 @@
 2048. The default is simply printing the board to stdout and asking for help from the user!"""
 
 
-from game import input_player
+from game import Game, input_player
 
 
 class AI:
@@ -26,3 +26,13 @@ class AI:
     def after_game_hook(self, game):
         """Given a completed game, does whatever."""
         pass
+
+    def score_trials(self, width=4, height=4, goal=2048, n_games=100, tiles=(2, 4), weights=(9, 1)):
+        """Returns the percentage of games that ended in victory given a certain amount of
+        trials. Tiles and weights regulate random drops."""
+        num_won = 0
+        for i in range(n_games):
+            game = Game(width, height, goal=goal)
+            if self.play_game_to_completion(game, tiles, weights) > 0:
+                num_won += 1
+        return num_won / n_games

@@ -2,6 +2,7 @@
 possible to accomodate variations on the game."""
 
 
+from copy import deepcopy
 from random import choice
 
 import numpy as np
@@ -120,39 +121,43 @@ class Board:
     def __collapse_row(self, row):
         """Collapses the numpy array row in-place leftwards according to the logic of 2048: e.g.,
         - 16 4 4  ==>  16 8 - -
-        Returns None."""
+        Returns None.
+
+        This is, as an aside, responsible for about 20% of the runtime of AI training, so fast is
+        good!
+
+        """
 
         # the base case of nothing: important, otherwise the below will loop forever
         if np.count_nonzero(row) == 0:  # all blank
             return row
 
-        r = list(row)
-        # if there is space to move leftwards, does so and adds space to the end
-        while r[0] == 0:
-            r = r[1:] + [r[0]]
+        # remove all empty space and add back later
+        old_length = len(row)
+        r = row[np.nonzero(row)]
 
-        # now, go through and collapse any blank space between two tiles
-        for i in range(1, len(r) - 1):
+        # No longer uses can_combine(), because it's too slow.
+        # I tried to do this with masks, but the special case of many repeated elements is extremely
+        # difficult to handle robustly
 
-            # if there is some filled square that should collapse into this spot on the right
-            # keep collapsing blank squares until this "run" is over
-            while r[i] == 0 and not all([x == 0 for x in r[i+1:]]):
-                r = r[:i] + r[i+1:] + [r[i]]  # shuffle this space to the end, keep length constant
+        # always match pairs after the last matched pair
+        last_matched = -1
+        while 0 in np.diff(r):  # more pairs to cancel
+            pairs = np.where(np.diff(r) == 0)[0]
+            # get first pair that is after the last matched pair, or break
+            pairs = pairs[pairs > last_matched]
+            if len(pairs) > 0:
+                first_pair = pairs[0]
+                last_matched = first_pair
+            else:
+                break
+            # now just replace that with a spacer -1 and the combined sum
+            # but do nothing if you'd be double-matching a tile
+            r[first_pair] += r[first_pair + 1]
+            r[first_pair + 1] = -1
 
-        # now, the fun part: actually collapsing tiles, before we remove empty squares again
-        # because can_combine rejects blank squares, no need to worry about them here
-        for i in range(len(r) - 1):
-            if self.can_combine(r[i], r[i+1]):
-                # combine and then erase one of the tiles
-                r[i] = self.combine(r[i], r[i+1])
-                r[i+1] = 0
-
-        # now just remove every zero and add back zeroes at the end as padding
-        old_l = len(r)
-        r = [x for x in r if x != 0]
-        r += [0 for i in range(old_l - len(r))]
-
-        return np.array(r)
+        r = r[r != -1]
+        return np.append(r, np.zeros(old_length - len(r)))
 
     def __move_left(self):
         """Collapses the board leftwards. This method is private and outside users should use
@@ -180,6 +185,13 @@ class Board:
             return 0
         else:
             return 1
+
+    def show_move(self, direction):
+        """Returns a new tuple (board, did_change) that are a new copied Board with the given
+        directional move made and a 1-0 flag if the given move changed anything. It is a stateless
+        alternative to make_move."""
+        new_board = deepcopy(self)
+        return (new_board, new_board.make_move(direction))
 
     def add_random_tile(self, tiles=(2, 4), weights=(9, 1)):
         """Adds a tile in a randomly chosen unoccupied position according to the given weighted selection of

@@ -29,11 +29,14 @@ class Game:
 
         self.goal = goal
 
+    def __str__(self):
+        return str(self.board)
+
     def update_history(self, spawns, move_list):
         """Given a list of spawns and moves, takes turns spawning a tile at the given location, and
         making the desired move."""
         for i in range(len(spawns)):
-            self.spawns.append(i)
+            self.spawns.append(spawns[i])
             self.board.set_tile(*spawns[i][0], spawns[i][1])
             self.make_move(move_list[i])
 
@@ -96,6 +99,14 @@ class Game:
             self.play(move_generation_func, tiles, weights)
         return self.game_status
 
+    def print_boards(self):
+        """Prints the boards in order of appearance in history."""
+        new_g = Game(board=self.original_board)
+        for spawn, move in zip(self.spawns, self.history):
+            new_g.update_history([spawn], [move])
+            print(new_g)
+            print('\n' + '-' * 10)
+
     def save(self, filename):
         """Saves this game to a file as a newline-separated list of WASD with info at the beginning.
         """
@@ -127,15 +138,13 @@ class Game:
             for i in range(4, len(lines), 2):
                 spawn_line = lines[i]
                 move_line = lines[i+1]
-                print(spawn_line)
-                print(move_line)
                 spawn_pos, spawn_tile = spawn_line.split(' ')
                 spawn_x, spawn_y = spawn_pos.split('-')
                 spawns.append(((int(spawn_x), int(spawn_y)), int(spawn_tile)))
                 moves.append(int(move_line))
 
             g.update_history(spawns, moves)
-                
+
         return g
 
 
