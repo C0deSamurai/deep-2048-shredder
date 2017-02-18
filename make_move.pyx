@@ -32,4 +32,3 @@ def move_left(np.ndarray[DTYPE_t, ndim=2] mat):
     cdef int y_max = mat.shape[0]
     for y in range(y_max):
         collapse_row(mat[y])
-

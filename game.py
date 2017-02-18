@@ -1,5 +1,7 @@
 """This file has a class that allows someone to play a complete 2048 game with full game history."""
 
+import os
+
 
 from random import choice
 
@@ -107,20 +109,32 @@ class Game:
             print(new_g)
             print('\n' + '-' * 10)
 
+    def __write_data(self, outfile):
+        outfile.write("{}\n".format(self.board.width))
+        outfile.write("{}\n".format(self.board.height))
+        outfile.write("{}\n".format(self.goal))
+        outfile.write(' '.join(map(str, list(self.original_board.flatten()))))
+        outfile.write('\n')
+        for i in range(len(self.history)):
+            curr_spawn = self.spawns[i]
+            curr_move = self.history[i]
+            outfile.write("{}-{} {}\n".format(*curr_spawn[0], curr_spawn[1]))
+            outfile.write("{}\n".format(curr_move))
+
     def save(self, filename):
         """Saves this game to a file as a newline-separated list of WASD with info at the beginning.
         """
         with open(filename, 'w') as outfile:
-            outfile.write("{}\n".format(self.board.width))
-            outfile.write("{}\n".format(self.board.height))
-            outfile.write("{}\n".format(self.goal))
-            outfile.write(' '.join(map(str, list(self.original_board.flatten()))))
-            outfile.write('\n')
-            for i in range(len(self.history)):
-                curr_spawn = self.spawns[i]
-                curr_move = self.history[i]
-                outfile.write("{}-{} {}\n".format(*curr_spawn[0], curr_spawn[1]))
-                outfile.write("{}\n".format(curr_move))
+            self.__write_data(outfile)
+
+    def append(self, filename, sep='#'):
+        """Appends this game to an already-existing file, adding `sep` in between games"""
+        if not os.path.isfile(filename):
+            self.save(filename)
+
+        with open(filename, 'a') as outfile:
+            outfile.write(sep)
+            self.__write_data(outfile)
 
     @staticmethod
     def open(filename):
@@ -146,6 +160,39 @@ class Game:
             g.update_history(spawns, moves)
 
         return g
+
+    @staticmethod
+    def open_from_text(filename):
+        """Generates a Game object from the given string"""
+        lines = filename.split('\n')
+        width = int(lines[0])
+        height = int(lines[1])
+        goal = int(lines[2])
+        tiles = [float(x) for x in lines[3].strip().split(' ')]
+        tiles = np.array(tiles).reshape(height, width)
+        g = Game(width, height, tiles, None, goal)
+        spawns = []
+        moves = []
+        for i in range(4, len(lines), 2):
+            spawn_line = lines[i]
+            move_line = lines[i+1]
+            spawn_pos, spawn_tile = spawn_line.split(' ')
+            spawn_x, spawn_y = spawn_pos.split('-')
+            spawns.append(((int(spawn_x), int(spawn_y)), int(spawn_tile)))
+            moves.append(int(move_line))
+
+        g.update_history(spawns, moves)
+
+        return g
+
+    @staticmethod
+    def open_batch(filename, sep='#'):
+        with open(filename, 'r') as infile:
+            
+            lines = [x.strip() for x in ''.join(list(infile)).split(sep)]
+            g = [open_from_text(l) for l in lines]
+
+        return g            
 
 
 def input_player(board):
