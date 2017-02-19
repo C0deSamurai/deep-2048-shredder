@@ -23,27 +23,8 @@ from verboseprint import *
 
 class QLearningNNet (AI):
 
-    def __init__(self, save_dir="data"):
 
-        # Set parameters
-        self.save_dir = save_dir
-        # Create directories used by the class
-        if not os.path.isdir(self.save_dir):
-            os.mkdir(self.save_dir)
-        if not os.path.isdir(self.save_dir + "/states"):
-            os.mkdir(self.save_dir + "/states")
-
-        self.chain = lambda mat: list(itertools.chain.from_iterable(mat))
-
-        ### TODO: make some or all of these keyword arguments and save them in save_state()
-        (self.n_inputs, self.n_hidden1, self.n_hidden2, self.n_outputs, self.epochs, self.print_every, 
-        self.n_samples, self.batch, self.reg, self.alpha) = (20, 8, 5, 1, 200, 20, 200, 1, 0.01, 0.01)
-        
-        # Training flag: true if the model should be training
-        self.train = True
-        self.update = False
-        self.epsilon = 1
-        self.gamma = 0.1
+    def __init_nnet(self):
         
         ## Build the neural network
         
@@ -91,6 +72,40 @@ class QLearningNNet (AI):
                                            (b3, b3 - self.alpha * gb3)))
 
         self.predict = theano.function(inputs=[x], outputs=prediction)
+
+    def __init__(self, save_dir="data", lazy=False):
+        """
+        Initializes the class.
+
+        Keyword args:
+        - save_dir specifies the directory where things like game history and neural network snapshots will be saved.
+        - lazy can be used to delay creation of the neural network to the first time that it is used. Mostly for internal use.
+        """
+
+        self.save_dir = save_dir
+
+        # Create directories used by the class
+        if not os.path.isdir(self.save_dir):
+            os.mkdir(self.save_dir)
+        if not os.path.isdir(self.save_dir + "/states"):
+            os.mkdir(self.save_dir + "/states")
+
+        ### TODO: make some or all of these keyword arguments and save them in save_state()
+        (self.n_inputs, self.n_hidden1, self.n_hidden2, self.n_outputs, self.epochs, self.print_every, 
+        self.n_samples, self.batch, self.reg, self.alpha) = (20, 8, 5, 1, 200, 20, 200, 1, 0.01, 0.01)
+        
+        # Training flag: true if the model should be training
+        self.train_mode = True
+        self.update = False
+        self.epsilon = 1
+        self.gamma = 0.1
+
+        self.chain = lambda mat: list(itertools.chain.from_iterable(mat))
+        if lazy == False:
+            self.__init_nnet()
+            self.initialized = True
+        else:
+            self.initialized = False
         
     
     def train(self, n, snapshot_every=100, printouts=True):
@@ -102,6 +117,11 @@ class QLearningNNet (AI):
 
         Has verbose printouts which can be disabled via the printouts parameter
         """
+
+        if self.initialized == False:
+            self.__init_nnet()
+            self.initialized = True
+
         if not os.path.isdir("data"):
             os.mkdir("data")
         #print([x.get_value() for x in nnet.W])
@@ -118,28 +138,27 @@ class QLearningNNet (AI):
         vprint("starting training...")
         boards = []
 
-        avg_time = 0
         for i in range(n):
             vprint("starting game #" + str(i) + '...', end='')
-            time0_ = time.time()
             game = Game()
             self.play_game_to_completion(game)
             game.append("data/games.txt")
             boards.append(game.board)
-            time1_ = time.time()
-            avg_time += time1_ - time0_
+
             if i % 20 == 0:
                 vprint("saving state " + str(staten))
-                nnet.save_state("data/states/snapshot" + str(staten))
+                self.save_state("data/states/snapshot" + str(staten))
                 staten += 1
+            if self.epsilon > 0.1:
+                self.epsilon -= 1/n
+
         time1 = time.time()
 
-        avg_time = avg_time / n
         vprint("Time taken to play " + str(n) + " games: " + str(time1-time0))
-        vprint("Average time per game: " + str(avg_time))
+        vprint("Average time per game: " + str((time1-time0) / n))
 
-        vprint("saving state " + str(staten))
-        nnet.save_state("data/states/state" + str(staten))
+        vprint("saving final state " + str(staten))
+        self.save_state("data/states/state" + str(staten))
         staten += 1
 
 
@@ -160,6 +179,10 @@ class QLearningNNet (AI):
 
 
     def save_state(self, filename):
+        if self.initialized == False:
+            self.__init_nnet()
+            self.initialized = True
+
         with open(filename, 'wb') as outfile:
             pickle.dump(self, outfile, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -184,13 +207,17 @@ class QLearningNNet (AI):
         return ([x.get_value() for x in self.W], [x.get_value() for x in self.b])
     
     def play_move(self, board):
+        if self.initialized == False:
+            self.__init_nnet()
+            self.initialized = True
+
         # TODO: change the value function to something better
         # state is what is given as input to the network
         a = 0.3
         value = lambda state: math.sqrt(sum([x**2 for x in state]) / len(state)) - (a * (sum([np.sign(x) for x in state])/2)**2)
         #chain = lambda mat: list(itertools.chain.from_iterable(mat))
 
-        if self.train and self.update:
+        if self.train_mode and self.update:
             Sprime = self.chain(board.board.tolist())
             reward = value(Sprime) - value(self.current_state)
             Qprime = (self.predict([Sprime + [1, 0, 0, 0]]), self.predict([Sprime + [0, 1, 0, 0]]),\
@@ -215,7 +242,7 @@ class QLearningNNet (AI):
                 self.predict([S + [0, 0, 1, 0]]), self.predict([S + [0, 0, 0, 1]]))
                 
         
-        if self.train and random.random() < self.epsilon:
+        if self.train_mode and random.random() < self.epsilon:
             action = np.random.randint(0,4)
         else:
             action = np.argmax(qval)
