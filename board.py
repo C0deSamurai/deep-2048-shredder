@@ -7,7 +7,7 @@ from random import choice
 
 import numpy as np
 
-make_move = __import__('make_move', globals(), locals(), [])
+import make_move
 
 
 class Board:

@@ -40,7 +40,8 @@ class Game:
         for i in range(len(spawns)):
             self.spawns.append(spawns[i])
             self.board.set_tile(*spawns[i][0], spawns[i][1])
-            self.make_move(move_list[i])
+            if i < len(move_list):
+                self.make_move(move_list[i])
 
     def make_move(self, direction):
         """Direction is 0-3 clockwise from the top (0 = UP, 1 = RIGHT, etc.). Makes a move, saves it to the
@@ -121,16 +122,20 @@ class Game:
             outfile.write("{}-{} {}\n".format(*curr_spawn[0], curr_spawn[1]))
             outfile.write("{}\n".format(curr_move))
 
+        # Add the final spawn after the last move made, which gets cut off, because len(self.spawns) = len(self.history) + 1
+        outfile.write("{}-{} {}\n".format(*self.spawns[-1][0], self.spawns[-1][1]))
+
     def save(self, filename):
         """Saves this game to a file as a newline-separated list of WASD with info at the beginning.
         """
-        with open(filename, 'w') as outfile:
+        with open(filename, 'w+') as outfile:
             self.__write_data(outfile)
 
     def append(self, filename, sep='#'):
         """Appends this game to an already-existing file, adding `sep` in between games"""
         if not os.path.isfile(filename):
             self.save(filename)
+            return
 
         with open(filename, 'a') as outfile:
             outfile.write(sep)
@@ -151,20 +156,22 @@ class Game:
             moves = []
             for i in range(4, len(lines), 2):
                 spawn_line = lines[i]
-                move_line = lines[i+1]
+                if i < len(lines) - 1:
+                    move_line = lines[i+1]
                 spawn_pos, spawn_tile = spawn_line.split(' ')
                 spawn_x, spawn_y = spawn_pos.split('-')
                 spawns.append(((int(spawn_x), int(spawn_y)), int(spawn_tile)))
-                moves.append(int(move_line))
+                if i < len(lines) - 1:
+                    moves.append(int(move_line))
 
             g.update_history(spawns, moves)
 
         return g
 
     @staticmethod
-    def open_from_text(filename):
+    def open_from_text(text):
         """Generates a Game object from the given string"""
-        lines = filename.split('\n')
+        lines = text.split('\n')
         width = int(lines[0])
         height = int(lines[1])
         goal = int(lines[2])
@@ -175,11 +182,13 @@ class Game:
         moves = []
         for i in range(4, len(lines), 2):
             spawn_line = lines[i]
-            move_line = lines[i+1]
+            if i < len(lines) - 1:
+                move_line = lines[i+1]
             spawn_pos, spawn_tile = spawn_line.split(' ')
             spawn_x, spawn_y = spawn_pos.split('-')
             spawns.append(((int(spawn_x), int(spawn_y)), int(spawn_tile)))
-            moves.append(int(move_line))
+            if i < len(lines) - 1:
+                moves.append(int(move_line))
 
         g.update_history(spawns, moves)
 
@@ -189,10 +198,10 @@ class Game:
     def open_batch(filename, sep='#'):
         with open(filename, 'r') as infile:
             
-            lines = [x.strip() for x in ''.join(list(infile)).split(sep)]
-            g = [open_from_text(l) for l in lines]
+            sections = [x.strip() for x in ''.join(list(infile)).split(sep)]
+            g = [Game.open_from_text(s) for s in sections]
 
-        return g            
+        return g
 
 
 def input_player(board):
