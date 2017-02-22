@@ -19,9 +19,14 @@ class AI:
     def play_game_to_completion(self, game, tiles=(2, 4), weights=(9, 1)):
         """Given a starting position in a game, makes moves until the game is completed. Returns the
         game's status at completion. After the game, implements the after_game_hook."""
-        game.play_to_completion(self.play_move, tiles, weights)
+        game.play_to_completion(self.play_move, self.per_move_callback, tiles, weights)
         self.after_game_hook(game)
         return game.game_status()
+        
+        
+    def per_move_callback(self):
+        """Code to be executed after every move"""
+        pass
 
     def after_game_hook(self, game):
         """Given a completed game, does whatever."""

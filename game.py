@@ -91,15 +91,18 @@ class Game:
             pass
         return self.game_status()
 
-    def play_to_completion(self, move_generation_func, tiles=(2, 4), weights=(9, 1)):
+    def play_to_completion(self, move_generation_func, per_move_callback=None, tiles=(2, 4), weights=(9, 1)):
         """Given a function that takes in the current board position and returns a move, continues play
         until the game is over, returning the game status. Tiles and weights get passed to
         add_random_tile.
-
+        
+        permove_callback is an optional function that is called after every move. It is used for model-training purposes.
         """
         self.add_random_tile(tiles, weights)
         while not self.game_status():
             self.play(move_generation_func, tiles, weights)
+            if not per_move_callback is None:
+                per_move_callback()
         return self.game_status
 
     def print_boards(self):
