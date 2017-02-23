@@ -69,11 +69,11 @@ class QLearningNNet (AI):
                                            (W2, W2 - self.alpha * gW2),
                                            (b2, b2 - self.alpha * gb2),
                                            (W3, W3 - self.alpha * gW3),
-                                           (b3, b3 - self.alpha * gb3)))
+                                           (b3, b3 - self.alpha * gb3)), profile=True)
 
         self.predict = theano.function(inputs=[x], outputs=prediction)
 
-    def __init__(self, save_dir="data", lazy=False):
+    def __init__(self, save_dir="data", lazy=False, memory=100):
         """
         Initializes the class.
 
@@ -108,7 +108,7 @@ class QLearningNNet (AI):
             self.initialized = False
         
     
-    def train(self, n, snapshot_every=100, printouts=True):
+    def train(self, n, snapshot_every=100, printouts=True, session=0):
         """
         Plays through n games, saving a snapshot of the neural network every `save_every` games.
         save_every can be set to None if you do not want to save snapshots of the weights.
@@ -122,10 +122,17 @@ class QLearningNNet (AI):
             self.__init_nnet()
             self.initialized = True
 
+        VerbosePrint.QUIET = not printouts
+
+        vprint("\n", prefix=False)
+        vprint("##############################")
+        vprint("Beginning new training session")
+        vprint("##############################")
+
         if not os.path.isdir("data"):
             os.mkdir("data")
         #print([x.get_value() for x in nnet.W])
-        vprint("checking for games.txt...", msg=PRINT_SUCCESS)
+        vprint("checking for games.txt...")
     
         if os.path.isfile("data/games.txt"):
             vprint("found. removing...")
@@ -133,10 +140,11 @@ class QLearningNNet (AI):
 
         time0 = time.time()
 
-        n = 10
         staten = 0
         vprint("starting training...")
         boards = []
+
+        state_prefix = "data/states/session" + str(session) + "snapshot"
 
         for i in range(n):
             vprint("starting game #" + str(i) + '...', end='')
@@ -145,9 +153,9 @@ class QLearningNNet (AI):
             game.append("data/games.txt")
             boards.append(game.board)
 
-            if i % 20 == 0:
+            if i % snapshot_every == 0 and not snapshot_every == 0:
                 vprint("saving state " + str(staten))
-                self.save_state("data/states/snapshot" + str(staten))
+                self.save_state(state_prefix + str(staten))
                 staten += 1
             if self.epsilon > 0.1:
                 self.epsilon -= 1/n
@@ -158,8 +166,7 @@ class QLearningNNet (AI):
         vprint("Average time per game: " + str((time1-time0) / n))
 
         vprint("saving final state " + str(staten))
-        self.save_state("data/states/state" + str(staten))
-        staten += 1
+        self.save_state(state_prefix + str(staten))
 
 
         games = Game.open_batch("data/games.txt")
@@ -176,6 +183,8 @@ class QLearningNNet (AI):
 
         #print([x.get_value() for x in nnet.W])
         vprint("Done.")
+
+        VerbosePrint.QUIET = False
 
 
     def save_state(self, filename):
@@ -252,6 +261,8 @@ class QLearningNNet (AI):
         self.last_action = action
         
         #board.make_move(action)
+        #vprint("Action: " + str(action), debug=True)
+        #vprint(str(board), prefix=False, debug=True)
         return action
                 
         

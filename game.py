@@ -9,6 +9,7 @@ import numpy as np
 
 from board import Board
 
+from verboseprint import *
 
 class Game:
     """A game of 2048."""
@@ -72,6 +73,10 @@ class Game:
                 if self.board.get_tile(x, y) == 0:
                     unoccupied_slots.append((x, y))
 
+        if len(unoccupied_slots) == 0:
+            vprint("Tried to add tile to full board", debug=True)
+            return
+
         chosen_slot = choice(unoccupied_slots)
         
         normed_weights = [weight / sum(weights) for weight in weights]
@@ -88,6 +93,7 @@ class Game:
         if self.make_move(move_generation_func(self.board)):
             self.add_random_tile(tiles, weights)
         else:
+            #self.add_random_tile(tiles, weights)
             pass
         return self.game_status()
 
