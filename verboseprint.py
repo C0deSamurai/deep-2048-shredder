@@ -36,3 +36,9 @@ class VerbosePrint:
 
 def vprint(string, msg=PRINT_INFO, logfile=None, end='\n', prefix=True, debug=False):
     VerbosePrint.print(string, msg=msg, logfile=logfile, end=end, prefix=prefix, debug=debug)
+
+def vprint_np(string, logfile=None, end='\n', debug=False):
+    """
+    Same as vprint, but never adds the prefix (_np for 'no prefix')
+    """
+    VerbosePrint.print(string, logfile=logfile, end=end, prefix=False, debug=debug)

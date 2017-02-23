@@ -11,6 +11,9 @@ from verboseprint import *
 import cProfile
 import pstats
 
+import itertools
+
+from shutil import copyfile
 
 def main():
     VerbosePrint.DEBUG = True
@@ -18,22 +21,43 @@ def main():
     if not os.path.isdir("data"):
         os.mkdir("data")
         
-    
+    session_start = 11
 
-    nnet = QLearningNNet(goal=256)
+    chain = lambda mat: list(itertools.chain.from_iterable(mat))
+    for i in range(15):
+
+        nnet = QLearningNNet.restore_state("data/states/session{}/snapshot25".format(session_start - 1))
+        #nnet = QLearningNNet(goal=512)
+        nnet.goal = 512
+        nnet.train(500, session=session_start)
+        print([x.get_value() for x in nnet.W])
+        if float('nan') in chain([x.get_value().tolist() for x in nnet.W]):
+            vprint("nan value detected!", msg=PRINT_FATAL)
+            break
+        nnet.print_report()
+
+
+        session_start += 1
     
-    print(nnet._value(np.array([[0, 0, 0, 256], [0, 0, 128, 128], [0, 0, 0, 0], [0, 0, 0, 0]])))
-    print(nnet._value(np.array([[0, 0, 0, 256], [0, 0, 0, 256], [0, 0, 0, 0], [0, 0, 0, 0]])))
-    
-    nnet.train(100)
-    print([x.get_value() for x in nnet.W])
+    vprint("Copying log...")
+    copyfile("data/log", "C:\\Users\\Sam\\Dropbox\\nnet_log.txt")
+
+    #nnet.train_mode = False
+
+    #game = Game()
+    #nnet.play_game_to_completion(game)
+
     #nnet.epoch.profile.print_summary()
 
+PROFILE=False
 if __name__=="__main__":
-    cProfile.run("main()", "profile.prof")
+    if PROFILE == True:
+        cProfile.run("main()", "profile.prof")
 
-    stream = open('stats.txt', 'w');
-    stats = pstats.Stats('profile.prof', stream=stream)
-    stats.sort_stats('tottime')
-    stats.print_stats()
-    stream.close()
+        stream = open('stats.txt', 'w');
+        stats = pstats.Stats('profile.prof', stream=stream)
+        stats.sort_stats('tottime')
+        stats.print_stats()
+        stream.close()
+    else:
+        main()

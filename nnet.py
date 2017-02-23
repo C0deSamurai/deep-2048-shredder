@@ -69,12 +69,11 @@ class QLearningNNet (AI):
                                            (W2, W2 - self.alpha * gW2),
                                            (b2, b2 - self.alpha * gb2),
                                            (W3, W3 - self.alpha * gW3),
-                                           (b3, b3 - self.alpha * gb3)),
-                                profile=True)
+                                           (b3, b3 - self.alpha * gb3)))
 
         self.predict = theano.function(inputs=[x], outputs=prediction)
 
-    def __init__(self, save_dir="data", lazy=False, exp_replay_size=200, exp_batch_size=10, goal=2048):
+    def __init__(self, save_dir="data", lazy=False, exp_replay_size=200, exp_batch_size=40, goal=2048):
 
         """
         Initializes the class.
@@ -96,6 +95,13 @@ class QLearningNNet (AI):
 
         self.exp_replay = [0 for x in range(self.exp_replay_size)]
         self.exp_replay_max = 0
+
+        self.act = lambda x: [10 if i == x else -5 for i in range(4)]
+
+
+        self.tile_stats = {}
+        self.explore_moves = 0
+        self.exploit_moves = 0
         
         # Create directories used by the class
         if not os.path.isdir(self.save_dir):
@@ -122,9 +128,8 @@ class QLearningNNet (AI):
         
     
     def per_move_callback(self):
-        if self.exp_replay_count > self.exp_replay_size:
-                
-            #vprint("Training minibatch...")
+
+        if self.train_mode == True and self.exp_replay_count > self.exp_replay_size:
             exp_replay_copy = []
             exp_replay_copy[:] = self.exp_replay[:]
             exp_batch = []
@@ -134,8 +139,8 @@ class QLearningNNet (AI):
             x_train = []
             y_train = []
             for state, action, new_state, reward in exp_batch:
-                Qprime = (self.predict([new_state + [1, 0, 0, 0]]), self.predict([new_state + [0, 1, 0, 0]]),\
-                          self.predict([new_state + [0, 0, 1, 0]]), self.predict([new_state + [0, 0, 0, 1]]))
+                Qprime = (self.predict([new_state + self.act(0)]), self.predict([new_state + self.act(1)]),\
+                          self.predict([new_state + self.act(2)]), self.predict([new_state + self.act(3)]))
                 
                 maxQ = np.max(Qprime)
                 
@@ -146,8 +151,6 @@ class QLearningNNet (AI):
             # train with mini_batch
             out, rms = self.epoch(np.array(x_train).astype(np.float32), 
                               np.array(y_train).astype(np.float32))
-                              
-            #vprint("finished training minibatch")
     
     def _value(self, state):
         """State should be a numpy array"""
@@ -155,12 +158,18 @@ class QLearningNNet (AI):
         
         _state = state
         
-        # sum squares of differences of rows, 1-0, 2-1, 3-2
-        _sum = ((_state[1] - _state[0])**2).sum() + ((_state[2] - _state[1])**2).sum() + ((_state[3] - _state[2])**2).sum()
-        _state = _state.T
-        _sum += ((_state[1] - _state[0])**2).sum() + ((_state[2] - _state[1])**2).sum() + ((_state[3] - _state[2])**2).sum()
-        _state = _state.T
+        # sum squares of differences of rows and columns, 1-0, 2-1, 3-2
+        #_sum = ((_state[1] - _state[0])**2).sum() + ((_state[2] - _state[1])**2).sum() + ((_state[3] - _state[2])**2).sum()
+        #_state = _state.T
+        #_sum += ((_state[1] - _state[0])**2).sum() + ((_state[2] - _state[1])**2).sum() + ((_state[3] - _state[2])**2).sum()
+        #_state = _state.T
         #return reciprocal(sum)
+
+        _sum = 0
+        rows = self.chain(_state.tolist())
+        cols = self.chain(_state.T.tolist())
+        _sum += sum([(rows[i] - rows[i + 1])**2 for i in range(len(rows) - 1) if (not i % 4 == 3) and (not rows[i] == 0 and not rows[i + 1] == 0)])
+        _sum += sum([(cols[i] - cols[i + 1])**2 for i in range(len(cols) - 1) if (not i % 4 == 3) and (not cols[i] == 0 and not cols[i + 1] == 0)])
         
         
         # TODO: change the value function to something better
@@ -170,7 +179,6 @@ class QLearningNNet (AI):
         return reciprocal(_sum) + (a * tile_rms(self.chain(_state.tolist())))
         
     def train(self, n, snapshot_every=20, printouts=True, session=0):
-
         """
         Plays through n games, saving a snapshot of the neural network every `save_every` games.
         save_every can be set to None if you do not want to save snapshots of the weights.
@@ -207,8 +215,8 @@ class QLearningNNet (AI):
         if os.path.isfile("data/games.txt"):
             vprint("found. removing...")
             os.remove("data/games.txt")
-
-            
+        if not os.path.isdir("data/states/session" + str(session)):
+            os.mkdir("data/states/session" + str(session))
             
         time0 = time.time()
 
@@ -216,7 +224,7 @@ class QLearningNNet (AI):
         vprint("starting training...")
         boards = []
 
-        state_prefix = "data/states/session" + str(session) + "snapshot"
+        state_prefix = "data/states/session" + str(session) + "/snapshot"
 
         for i in range(n):
             vprint("starting game #" + str(i) + '...', end='')
@@ -228,10 +236,11 @@ class QLearningNNet (AI):
             boards.append(game.board)
 
             # save neural network state
-            if i % snapshot_every == 0:
-                vprint("saving state " + str(staten))
-                self.save_state(state_prefix + str(staten))
-                staten += 1
+            if not snapshot_every == 0:
+                if i % snapshot_every == 0:
+                    vprint("saving state " + str(staten))
+                    self.save_state(state_prefix + str(staten))
+                    staten += 1
             if self.epsilon > 0.1:
                 self.epsilon -= 1/n
 
@@ -303,15 +312,21 @@ class QLearningNNet (AI):
                 
         
             Sprime = self.chain(board.board.tolist())
+
             reward = value(board.board) - value(self.current_state_np)
-            Qprime = (self.predict([Sprime + [1, 0, 0, 0]]), self.predict([Sprime + [0, 1, 0, 0]]),\
-                      self.predict([Sprime + [0, 0, 1, 0]]), self.predict([Sprime + [0, 0, 0, 1]]))
+            Qprime = (self.predict([Sprime + self.act(0)]), self.predict([Sprime + self.act(1)]),\
+                      self.predict([Sprime + self.act(2)]), self.predict([Sprime + self.act(3)]))
             if board.game_status(goal=self.goal) == -1:
                 reward = -100 * (self.goal - np.max(self.chain(board.board.tolist())))
                 status = 0
             elif board.game_status(goal=self.goal) == 1:
                 reward = 10000
                 status = 0
+
+            # punish for not moving the board at all
+            if Sprime == self.current_state:
+                reward = -1000
+
             maxQ = np.max(Qprime)
             update = reward + (self.gamma * maxQ)
             
@@ -327,15 +342,17 @@ class QLearningNNet (AI):
     
         # For every move, adjust the weights
         S = self.chain(board.board.tolist())
-        qval = (self.predict([S + [1, 0, 0, 0]]), self.predict([S + [0, 1, 0, 0]]),\
-                self.predict([S + [0, 0, 1, 0]]), self.predict([S + [0, 0, 0, 1]]))
+        qval = (self.predict([S + self.act(0)]), self.predict([S + self.act(1)]),\
+                self.predict([S + self.act(2)]), self.predict([S + self.act(3)]))
                 
                 
         
         if self.train_mode and random.random() < self.epsilon:
             action = np.random.randint(0,4)
+            self.explore_moves += 1
         else:
             action = np.argmax(qval)
+            self.exploit_moves += 1
 
         self.update = True
         self.current_state = S
@@ -349,6 +366,35 @@ class QLearningNNet (AI):
                 
         
     def after_game_hook(self, game):
-        vprint("Highest tile: {}, status: {}".format(max(self.chain(game.board.board.tolist())), game.game_status()), prefix=False)
+
+        # Update statistics fields
+        max_tile = max(self.chain(game.board.board.tolist()))
+        if max_tile in self.tile_stats:
+            self.tile_stats[max_tile] += 1
+        else:
+            self.tile_stats[max_tile] = 1
+
+        vprint("Highest tile: {}, status: {}".format(max_tile, game.game_status()), prefix=False)
+
+
+    def print_report(self):
+        vprint_np("########################")
+        vprint_np("Tile staticstics summary")
+        vprint_np("########################")
+        vprint_np("")
+
+        total = sum([self.tile_stats[x] for x in self.tile_stats])
+
+        for key in self.tile_stats:
+            vprint_np(" * {} : {} ({}%)".format(key, self.tile_stats[key], 100 * (self.tile_stats[key] / total)))
+
+        vprint_np("")
+
+        vprint_np("########################")
+        vprint_np("Move staticstics summary")
+        vprint_np("########################")
         
-        pass
+        vprint_np("")
+        vprint_np("Total moves made: {}".format(self.explore_moves + self.exploit_moves))
+        vprint_np(" * Random moves: {}".format(self.explore_moves))
+        vprint_np(" * Non-random moves: {}".format(self.exploit_moves))
