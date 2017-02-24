@@ -30,6 +30,8 @@ class Game:
 
         self.goal = goal
 
+        self.terminate_game = False
+
     def __str__(self):
         return str(self.board)
 
@@ -47,6 +49,11 @@ class Game:
         history, and updates the board. Stalling moves return 0 and do not update the history; moves
         that change something return 1.
         """
+        if direction == -1:
+            # -1 indicates request for termination of the game
+            self.terminate_game = True
+            return 0
+
         if self.board.make_move(direction):
             self.history.append(direction)
             return 1
@@ -55,6 +62,8 @@ class Game:
 
     def game_status(self):
         """Returns 0 if game is still going on, 1 for victory, and -1 for loss."""
+        if self.terminate_game == True:
+            return -1
         return self.board.game_status(self.goal)
 
     def add_random_tile(self, tiles=(2, 4), weights=(9, 1)):

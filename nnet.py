@@ -107,6 +107,8 @@ class QLearningNNet(AI):
         self.explore_moves = 0
         self.exploit_moves = 0
 
+        self.repeat_counter = 0
+
         # Create directories used by the class
         if not os.path.isdir(self.save_dir):
             os.mkdir(self.save_dir)
@@ -178,6 +180,9 @@ class QLearningNNet(AI):
         self.train_on_batch(random.sample(total_positions, n_training_boards))
         
     def save_state(self, filename):
+        """
+        Saves necessary data to filename
+        """
         if not self.initialized:
             self.__init_nnet()
             self.initialized = True
@@ -187,6 +192,9 @@ class QLearningNNet(AI):
 
     @staticmethod
     def restore_state(filename):
+        """
+        Loads state from filename
+        """
         with open(filename, 'rb') as infile:
             obj = pickle.load(infile)
         return obj
@@ -216,7 +224,24 @@ class QLearningNNet(AI):
     
     def predict_play_move(self, board):
         """Attempts to play the best move according to the current model."""
-        return np.argmax(self.predict(board.board.reshape(1, -1).astype('float32')))
+
+        predicted = self.predict(board.board.reshape(1, -1).astype('float32'))
+
+        if hasattr(self, "last_board"):
+            if np.all(self.last_board == board.board):
+                self.repeat_counter += 1
+
+                for i in range(self.repeat_counter):
+                    if np.all(predicted == float('-inf')):
+                        vprint("Exhausted all options.")
+                        return -1
+                    predicted[0][np.argmax(predicted)] = float('-inf')# = np.delete(predicted, np.argmax(predicted), 1)
+            else:
+                self.repeat_counter = 0
+
+        self.last_board = np.copy(board.board)
+
+        return np.argmax(predicted)
 
     def training_play_move(self, board):
         """Depending on epsilon, has a probability to either play a random move or play the move
