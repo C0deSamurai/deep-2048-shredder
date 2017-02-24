@@ -1,15 +1,13 @@
 """This file has a class that allows someone to play a complete 2048 game with full game history."""
 
 import os
-
-
 from random import choice
 
 import numpy as np
 
 from board import Board
-
 from verboseprint import *
+
 
 class Game:
     """A game of 2048."""
@@ -107,9 +105,18 @@ class Game:
         self.add_random_tile(tiles, weights)
         while not self.game_status():
             self.play(move_generation_func, tiles, weights)
-            if not per_move_callback is None:
+            if per_move_callback is not None:
                 per_move_callback()
         return self.game_status
+
+    def get_all_boards(self):
+        """Returns a list of Boards in order of play, from first to last."""
+        new_g = Game(board=self.original_board)
+        boards = [new_g.board]
+        for spawn, move in zip(self.spawns, self.history):
+            new_g.update_history([spawn], [move])
+            boards.append(new_g.board)
+        return boards
 
     def print_boards(self):
         """Prints the boards in order of appearance in history."""

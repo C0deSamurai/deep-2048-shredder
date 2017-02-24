@@ -1,49 +1,53 @@
-import numpy as np
-import theano
-import theano.tensor as T
-import theano.sandbox.cuda.nnet
+import itertools
 #import matplotlib.pyplot as plt
 #import pydot
 import math
-
-import itertools
 import operator
-import time
-import random
-
-
-import board
-from ai import AI
-from game import Game
-
 import os
 import pickle
+import random
+import time
 
+import numpy as np
+import theano
+import theano.sandbox.cuda.nnet
+import theano.tensor as T
+
+from ai import AI
+from game import Game
 from verboseprint import *
 
-class QLearningNNet (AI):
 
+class QLearningNNet(AI):
 
     def __init_nnet(self):
-        
-        ## Build the neural network
-        
-        # Need to initialize the parameters to a small, random number
-        noise = (1/(np.sqrt(self.n_inputs * self.n_outputs * self.n_hidden1 * self.n_hidden2)))
 
-        # Weights and biases are theano shared variables, so that they can hold a state
-        W1 = theano.shared(noise * np.random.randn(self.n_inputs, self.n_hidden1).astype(np.float32), name='W1')
-        W2 = theano.shared(noise * np.random.randn(self.n_hidden1, self.n_hidden2).astype(np.float32), name='W2')
-        W3 = theano.shared(noise * np.random.randn(self.n_hidden2).astype(np.float32), name='W3')
-        b1 = theano.shared(np.zeros(self.n_hidden1).astype(np.float32), name='b1')
-        b2 = theano.shared(np.zeros(self.n_hidden2).astype(np.float32), name='b2')
+        # Build the neural network
+
+        # Need to initialize the parameters to a small, random number
+        noise = (1 / (np.sqrt(self.n_inputs * self.n_outputs *
+                              self.n_hidden1 * self.n_hidden2)))
+
+        # Weights and biases are theano shared variables, so that they can hold
+        # a state
+        W1 = theano.shared(noise * np.random.randn(self.n_inputs,
+                                                   self.n_hidden1).astype(np.float32), name='W1')
+        W2 = theano.shared(noise * np.random.randn(self.n_hidden1,
+                                                   self.n_hidden2).astype(np.float32), name='W2')
+        W3 = theano.shared(
+            noise * np.random.randn(self.n_hidden2, self.n_outputs).astype(np.float32), name='W3')
+        b1 = theano.shared(
+            np.zeros(self.n_hidden1).astype(np.float32), name='b1')
+        b2 = theano.shared(
+            np.zeros(self.n_hidden2).astype(np.float32), name='b2')
         b3 = theano.shared(np.float32(self.n_outputs), name='b3')
 
         self.W = [W1, W2, W3]
         self.b = [b1, b2, b3]
 
-
-        ### GPU NOTE: The CPU is faster at the moment because these values are not shared, so they must be transferred back and forth with every call to epoch()
+        # GPU NOTE: The CPU is faster at the moment because these values are
+        # not shared, so they must be transferred back and forth with every
+        # call to epoch()
         x = T.matrix('x')
         y = T.vector('y')
 
@@ -55,26 +59,25 @@ class QLearningNNet (AI):
         z3 = hidden2.dot(W3) + b3
         output = z3
         prediction = output
-
+        # print(T.shape(prediction))
         rms = ((y - output)**2).sum()
 
         # gradients
         gW1, gb1, gW2, gb2, gW3, gb3 = T.grad(rms, [W1, b1, W2, b2, W3, b3])
 
         # build theano functions
-        self.epoch = theano.function(inputs = [x, y],
-                                outputs = [output, rms],
-                                updates = ((W1, W1 - self.alpha * gW1),
-                                           (b1, b1 - self.alpha * gb1),
-                                           (W2, W2 - self.alpha * gW2),
-                                           (b2, b2 - self.alpha * gb2),
-                                           (W3, W3 - self.alpha * gW3),
-                                           (b3, b3 - self.alpha * gb3)))
+        self.epoch = theano.function(inputs=[x, y],
+                                     outputs=[output, rms],
+                                     updates=((W1, W1 - self.alpha * gW1),
+                                              (b1, b1 - self.alpha * gb1),
+                                              (W2, W2 - self.alpha * gW2),
+                                              (b2, b2 - self.alpha * gb2),
+                                              (W3, W3 - self.alpha * gW3),
+                                              (b3, b3 - self.alpha * gb3)))
 
         self.predict = theano.function(inputs=[x], outputs=prediction)
 
     def __init__(self, save_dir="data", lazy=False, exp_replay_size=200, exp_batch_size=40, goal=2048):
-
         """
         Initializes the class.
 
@@ -82,14 +85,16 @@ class QLearningNNet (AI):
         - save_dir specifies the directory where things like game history and neural network snapshots will be saved.
         - lazy can be used to delay creation of the neural network to the first time that it is used. Mostly for internal use.
         """
-        
+
         self.goal = goal
         self.save_dir = save_dir
-        
-        # Counts the number of times an entry has been added into the experience replay queue, 
+        self.num_games_saved = 0
+        self.in_training = True   # controls if play_move ignores epsilon
+
+        # Counts the number of times an entry has been added into the experience replay queue,
         # including entries that overwrite previous ones
         self.exp_replay_count = 0
-        
+
         self.exp_replay_size = exp_replay_size
         self.exp_batch_size = exp_batch_size
 
@@ -98,21 +103,21 @@ class QLearningNNet (AI):
 
         self.act = lambda x: [10 if i == x else -5 for i in range(4)]
 
-
         self.tile_stats = {}
         self.explore_moves = 0
         self.exploit_moves = 0
-        
+
         # Create directories used by the class
         if not os.path.isdir(self.save_dir):
             os.mkdir(self.save_dir)
         if not os.path.isdir(self.save_dir + "/states"):
             os.mkdir(self.save_dir + "/states")
 
-        ### TODO: make some or all of these keyword arguments and save them in save_state()
-        (self.n_inputs, self.n_hidden1, self.n_hidden2, self.n_outputs, self.epochs, self.print_every, 
-        self.n_samples, self.batch, self.reg, self.alpha) = (20, 8, 5, 1, 200, 20, 200, 1, 0.01, 0.01)
-        
+        # TODO: make some or all of these keyword arguments and save them in
+        # save_state()
+        (self.n_inputs, self.n_hidden1, self.n_hidden2, self.n_outputs, self.epochs, self.print_every,
+         self.n_samples, self.batch, self.reg, self.alpha) = (16, 10, 10, 4, 200, 20, 200, 1, 0.01, 0.01)
+
         # Training flag: true if the model should be training
         self.train_mode = True
         self.update = False
@@ -120,161 +125,60 @@ class QLearningNNet (AI):
         self.gamma = 0.7
 
         self.chain = lambda mat: list(itertools.chain.from_iterable(mat))
-        if lazy == False:
+        if not lazy:
             self.__init_nnet()
             self.initialized = True
         else:
             self.initialized = False
+
+    def reward(self, board):
+        """The basic reward function that describes the "winning" conditions. In this case, it
+        incentivizes leaving squares empty, getting a new highest tile, and matching tiles."""
+        a, b, c = (10, 0.2, 10)  # hyperparameter: tune at leisure
+        empty_square_reward = (board.shape[0] ** 2 - np.count_nonzero(board)) ** 4
+        highest_tile_reward = np.max(board.flatten())
+        tile_values_reward = np.log10((board ** 2).flatten().sum())
+
+        return a * empty_square_reward + b * highest_tile_reward + c * tile_values_reward
+
+    def train_on_batch(self, batch):
+        """Given a batch of tuples in the form (s_n, a, s_n+1, r_n+1), performs gradient descent to
+        train the model. Returns None."""
+        X_train = []
+        y_train = []
+        for old_s, a, new_s, new_r in batch:
+            old_q = self.predict(old_s.reshape(1, -1))
+            # print(old_q)
+            new_q = self.predict(new_s.reshape(1, -1))
+            maxQ = np.max(new_q)  # predicted reward for the best move after the new move
+            y = old_q.copy()
+
+            # Q-learning formula
+            y[0][a] = new_r + (self.gamma * maxQ)
+            X_train.append(old_s)
+            y_train.append(y)
+
+        # TODO: implement actual minibatch descent
+        for x, y in zip(X_train, y_train):
+            # print(x.shape, y.shape)
+            self.epoch(x.reshape(1, -1), y.reshape(-1))
+
+    def train_on_games(self, games, n_training_boards=40):
+        """Picks a given amount of random positions from the given list of games, and then uses each
+        of those positions to train the model. Returns None."""
+        total_positions = []
+        for game in games:
+            boards = game.get_all_boards()
+            for i, position in enumerate(boards[:-2]):  # last 2 positions are unhelpful
+                next_position = boards[i+1].board.astype('float32')
+                next_reward = self.reward(next_position)
+                past_move = game.history[i]
+                total_positions.append((position.board.astype('float32'), past_move,
+                                        next_position, next_reward))
+        self.train_on_batch(random.sample(total_positions, n_training_boards))
         
-    
-    def per_move_callback(self):
-
-        if self.train_mode == True and self.exp_replay_count > self.exp_replay_size:
-            exp_replay_copy = []
-            exp_replay_copy[:] = self.exp_replay[:]
-            exp_batch = []
-            while len(exp_batch) < self.exp_batch_size:
-                exp_batch.append(exp_replay_copy.pop(np.random.randint(0, len(exp_replay_copy))))
-            
-            x_train = []
-            y_train = []
-            for state, action, new_state, reward in exp_batch:
-                Qprime = (self.predict([new_state + self.act(0)]), self.predict([new_state + self.act(1)]),\
-                          self.predict([new_state + self.act(2)]), self.predict([new_state + self.act(3)]))
-                
-                maxQ = np.max(Qprime)
-                
-                update = reward + (self.gamma * maxQ)
-                x_train.append(state + [1 if i == action else 0 for i in range(4)])
-                y_train.append(update)
-                
-            # train with mini_batch
-            out, rms = self.epoch(np.array(x_train).astype(np.float32), 
-                              np.array(y_train).astype(np.float32))
-    
-    def _value(self, state):
-        """State should be a numpy array"""
-        reciprocal = lambda x: 100/(x+0.01)
-        
-        _state = state
-        
-        # sum squares of differences of rows and columns, 1-0, 2-1, 3-2
-        #_sum = ((_state[1] - _state[0])**2).sum() + ((_state[2] - _state[1])**2).sum() + ((_state[3] - _state[2])**2).sum()
-        #_state = _state.T
-        #_sum += ((_state[1] - _state[0])**2).sum() + ((_state[2] - _state[1])**2).sum() + ((_state[3] - _state[2])**2).sum()
-        #_state = _state.T
-        #return reciprocal(sum)
-
-        _sum = 0
-        rows = self.chain(_state.tolist())
-        cols = self.chain(_state.T.tolist())
-        _sum += sum([(rows[i] - rows[i + 1])**2 for i in range(len(rows) - 1) if (not i % 4 == 3) and (not rows[i] == 0 and not rows[i + 1] == 0)])
-        _sum += sum([(cols[i] - cols[i + 1])**2 for i in range(len(cols) - 1) if (not i % 4 == 3) and (not cols[i] == 0 and not cols[i + 1] == 0)])
-        
-        
-        # TODO: change the value function to something better
-        # state is what is given as input to the network
-        a = 0.1
-        tile_rms = lambda s: math.sqrt(sum([x**2 for x in s]) / len(s)) #- (a * (sum([np.sign(x) for x in _state])/2)**2)
-        return reciprocal(_sum) + (a * tile_rms(self.chain(_state.tolist())))
-        
-    def train(self, n, snapshot_every=20, printouts=True, session=0):
-        """
-        Plays through n games, saving a snapshot of the neural network every `save_every` games.
-        save_every can be set to None if you do not want to save snapshots of the weights.
-
-        The neural network can be restored from this save file using restore_state().
-
-        Has verbose printouts which can be disabled via the printouts parameter
-        """
-        
-        # Perform lazy initialization if needed
-        if self.initialized == False:
-            self.__init_nnet()
-            self.initialized = True
-
-
-        VerbosePrint.QUIET = not printouts
-
-        vprint("\n", prefix=False)
-        vprint("##############################")
-        vprint("Beginning new training session")
-        vprint("##############################")
-
-
-        # Reinitialize experience replay data
-        self.exp_replay_count = 0
-        self.exp_replay = [0 for x in range(self.exp_replay_size)]
-        
-        # Make sure the data save location is set up approprately
-        if not os.path.isdir("data"):
-            vprint("creating folder ./data...")
-            os.mkdir("data")
-
-        vprint("checking for games.txt...")
-        if os.path.isfile("data/games.txt"):
-            vprint("found. removing...")
-            os.remove("data/games.txt")
-        if not os.path.isdir("data/states/session" + str(session)):
-            os.mkdir("data/states/session" + str(session))
-            
-        time0 = time.time()
-
-        staten = 0
-        vprint("starting training...")
-        boards = []
-
-        state_prefix = "data/states/session" + str(session) + "/snapshot"
-
-        for i in range(n):
-            vprint("starting game #" + str(i) + '...', end='')
-            game = Game()
-            game.goal = self.goal
-            self.play_game_to_completion(game)
-                
-            game.append("data/games.txt")
-            boards.append(game.board)
-
-            # save neural network state
-            if not snapshot_every == 0:
-                if i % snapshot_every == 0:
-                    vprint("saving state " + str(staten))
-                    self.save_state(state_prefix + str(staten))
-                    staten += 1
-            if self.epsilon > 0.1:
-                self.epsilon -= 1/n
-
-        time1 = time.time()
-
-        vprint("Time taken to play " + str(n) + " games: " + str(time1-time0))
-        vprint("Average time per game: " + str((time1-time0) / n))
-
-        vprint("saving final state " + str(staten))
-
-        self.save_state(state_prefix + str(staten))
-
-        # Verify integrity of the save file games.txt
-        # It could probably be done faster with hashes, but this way ensures 
-        # that the class itself is functioning correctly.
-        games = Game.open_batch("data/games.txt")
-        vprint("verifying boards...")
-        boards_passed = True
-        for i in range(n):
-            if not games[i].board.board.tolist() == boards[i].board.tolist():
-                vprint("verification failed on " + str(i), msg=PRINT_FAIL)
-                boards_passed = False
-
-        if boards_passed:
-            vprint("verification success!", msg=PRINT_SUCCESS)
-
-
-        vprint("Done.")
-
-        VerbosePrint.QUIET = False
-
-
     def save_state(self, filename):
-        if self.initialized == False:
+        if not self.initialized:
             self.__init_nnet()
             self.initialized = True
 
@@ -286,7 +190,6 @@ class QLearningNNet (AI):
         with open(filename, 'rb') as infile:
             obj = pickle.load(infile)
         return obj
-
 
     def __setstate__(self, state):
         if not 'W' in dir(self):
@@ -300,71 +203,29 @@ class QLearningNNet (AI):
 
     def __getstate__(self):
         return ([x.get_value() for x in self.W], [x.get_value() for x in self.b])
-    
+
     def play_move(self, board):
-        if self.initialized == False:
-            self.__init_nnet()
-            self.initialized = True
-            
-        value = self._value
-
-        if self.train_mode and self.update:
-                
-        
-            Sprime = self.chain(board.board.tolist())
-
-            reward = value(board.board) - value(self.current_state_np)
-            Qprime = (self.predict([Sprime + self.act(0)]), self.predict([Sprime + self.act(1)]),\
-                      self.predict([Sprime + self.act(2)]), self.predict([Sprime + self.act(3)]))
-            if board.game_status(goal=self.goal) == -1:
-                reward = -100 * (self.goal - np.max(self.chain(board.board.tolist())))
-                status = 0
-            elif board.game_status(goal=self.goal) == 1:
-                reward = 10000
-                status = 0
-
-            # punish for not moving the board at all
-            if Sprime == self.current_state:
-                reward = -1000
-
-            maxQ = np.max(Qprime)
-            update = reward + (self.gamma * maxQ)
-            
-            out, rms = self.epoch(np.array([self.current_state + [1 if i == self.last_action else 0 for i in range(4)]]).astype(np.float32), 
-                                  np.array([update]).astype(np.float32))
-                                  
-            self.exp_replay[self.exp_replay_count % self.exp_replay_size] = (self.current_state, self.last_action, Sprime, reward)
-            self.exp_replay_count += 1
-                
-                
-            #vprint('updating nnet...' + str(rms))
-            self.update = False
-    
-        # For every move, adjust the weights
-        S = self.chain(board.board.tolist())
-        qval = (self.predict([S + self.act(0)]), self.predict([S + self.act(1)]),\
-                self.predict([S + self.act(2)]), self.predict([S + self.act(3)]))
-                
-                
-        
-        if self.train_mode and random.random() < self.epsilon:
-            action = np.random.randint(0,4)
-            self.explore_moves += 1
+        """If self.in_training is True, uses epsilon to determine whether to make a random move or a
+        calculated one. If False, always makes a calculated move."""
+        if self.in_training:
+            return self.training_play_move(board)
         else:
-            action = np.argmax(qval)
-            self.exploit_moves += 1
+            print(board)
+            print('\n')
+            return self.predict_play_move(board)
+    
+    def predict_play_move(self, board):
+        """Attempts to play the best move according to the current model."""
+        return np.argmax(self.predict(board.board.reshape(1, -1).astype('float32')))
 
-        self.update = True
-        self.current_state = S
-        self.current_state_np = board.board
-        self.last_action = action
-        
-        #board.make_move(action)
-        #vprint("Action: " + str(action), debug=True)
-        #vprint(str(board), prefix=False, debug=True)
-        return action
-                
-        
+    def training_play_move(self, board):
+        """Depending on epsilon, has a probability to either play a random move or play the move
+        that the model thinks is best."""
+        if np.random.random() < self.epsilon:
+            return np.random.choice(4)
+        else:
+            return self.predict_play_move(board)
+
     def after_game_hook(self, game):
 
         # Update statistics fields
@@ -374,27 +235,33 @@ class QLearningNNet (AI):
         else:
             self.tile_stats[max_tile] = 1
 
-        vprint("Highest tile: {}, status: {}".format(max_tile, game.game_status()), prefix=False)
+        vprint("Highest tile: {}, status: {}".format(
+            max_tile, game.game_status()), prefix=False)
 
+        # save to file
+        self.num_games_saved += 1
+        game.save("training_games/game-{}.dat".format(self.num_games_saved))
 
     def print_report(self):
         vprint_np("########################")
-        vprint_np("Tile staticstics summary")
+        vprint_np("Tile statistics summary")
         vprint_np("########################")
         vprint_np("")
 
         total = sum([self.tile_stats[x] for x in self.tile_stats])
 
         for key in self.tile_stats:
-            vprint_np(" * {} : {} ({}%)".format(key, self.tile_stats[key], 100 * (self.tile_stats[key] / total)))
+            vprint_np(" * {} : {} ({}%)".format(key,
+                                                self.tile_stats[key], 100 * (self.tile_stats[key] / total)))
 
         vprint_np("")
 
         vprint_np("########################")
         vprint_np("Move staticstics summary")
         vprint_np("########################")
-        
+
         vprint_np("")
-        vprint_np("Total moves made: {}".format(self.explore_moves + self.exploit_moves))
+        vprint_np("Total moves made: {}".format(
+            self.explore_moves + self.exploit_moves))
         vprint_np(" * Random moves: {}".format(self.explore_moves))
         vprint_np(" * Non-random moves: {}".format(self.exploit_moves))

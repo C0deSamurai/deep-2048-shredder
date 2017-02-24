@@ -1,19 +1,16 @@
+import cProfile
+import itertools
+import os
+import pstats
+import time
+from shutil import copyfile
+
 import numpy as np
 
-from nnet import QLearningNNet
 from game import Game
-import os
-
-import time
-
+from nnet import QLearningNNet
 from verboseprint import *
 
-import cProfile
-import pstats
-
-import itertools
-
-from shutil import copyfile
 
 def main():
     VerbosePrint.DEBUG = True
@@ -26,10 +23,10 @@ def main():
     chain = lambda mat: list(itertools.chain.from_iterable(mat))
     for i in range(15):
 
-        nnet = QLearningNNet.restore_state("data/states/session{}/snapshot25".format(session_start - 1))
-        #nnet = QLearningNNet(goal=512)
+        #nnet = QLearningNNet.restore_state("data/states/session{}/snapshot25".format(session_start - 1))
+        nnet = QLearningNNet(goal=512)
         nnet.goal = 512
-        nnet.train(500, session=session_start)
+        nnet.train(100, session=session_start)
         print([x.get_value() for x in nnet.W])
         if float('nan') in chain([x.get_value().tolist() for x in nnet.W]):
             vprint("nan value detected!", msg=PRINT_FATAL)
@@ -40,7 +37,7 @@ def main():
         session_start += 1
     
     vprint("Copying log...")
-    copyfile("data/log", "C:\\Users\\Sam\\Dropbox\\nnet_log.txt")
+    copyfile("data/log", "nnet_log.txt")
 
     #nnet.train_mode = False
 

@@ -23,7 +23,6 @@ class AI:
         self.after_game_hook(game)
         return game.game_status()
         
-        
     def per_move_callback(self):
         """Code to be executed after every move"""
         pass
