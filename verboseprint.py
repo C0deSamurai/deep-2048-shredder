@@ -1,3 +1,7 @@
+"""
+Defines utility to easily print verbosely and save all printouts to a log file at the same time.
+"""
+
 from datetime import datetime
 
 PRINT_STATUS='[STATUS]'

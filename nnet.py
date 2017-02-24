@@ -1,3 +1,7 @@
+"""
+Defines our implementation of a Q-learning neural network class.
+"""
+
 import itertools
 #import matplotlib.pyplot as plt
 #import pydot

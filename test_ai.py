@@ -1,3 +1,8 @@
+"""
+** Use train_nnet.py in favor of this.
+"""
+
+
 import cProfile
 import itertools
 import os
